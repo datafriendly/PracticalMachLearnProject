@@ -1,0 +1,89 @@
+Practical Machine Learning Project
+===================================
+
+### Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+The goal of this project is to predict the manner of performing unilateral dumbbell biceps curls based on data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. The 5 possible methods include -
+* A: exactly according to the specification 
+* B: throwing the elbows to the front
+* C: lifting the dumbbell only halfway 
+* D: lowering the dumbbell only halfway
+* E: throwing the hips to the front
+
+### Load & Clean up the data and Preprocess with PCA
+
+
+```r
+library(doParallel)
+rCluster <- makePSOCKcluster(6)  # Use 6 cores
+registerDoParallel(rCluster)
+```
+The libraries used
+
+
+```r
+library(caret); library(kernlab)
+```
+First we download the training data and the test data
+
+
+```r
+trainingData<-read.csv("C:/Users/Administrator/PracticalMachLearnProject/pml-training.csv")
+testData<-read.csv("C:/Users/Administrator/PracticalMachLearnProject/pml-testing.csv")
+```
+
+We delete the columns with blank and NA values. Then we merge the training and test set into a single data frame, so that we can use the PCA for both.
+
+
+```r
+classe<-trainingData$classe
+trainingSet<-trainingData[sapply(trainingData, function(trainingData) !any(is.na(trainingData)))]
+trainingSet<-trainingSet[sapply(trainingSet, function(trainingSet) !any(is.factor(trainingSet)))] 
+testClasse<-rep("NA",nrow(testData))
+testSet<-testData[names(trainingSet)]
+trainingSet<-cbind(classe,trainingSet)
+testSet<-cbind(testClasse,testSet)
+names(testSet)[1]<-"classe"
+trainingSet$toS<-"training"
+testSet$toS<-"test"
+set<-rbind(trainingSet,testSet)
+```
+
+
+Now, using the PCA, I create a new data frame the principal components explaining the 95% of variation. After that I separate the test from the training set
+
+
+```r
+preproc <- preProcess(set[c(-1,-58)], method='pca', thresh=0.95)
+set.pca <- predict(preproc, set[c(-1,-58)])
+set.pca$toS<-set$toS
+train.pca<-set.pca[set$toS=="training",]
+test.pca<-set.pca[set$toS=="test",]
+train.pca<-train.pca[-length(train.pca)]
+test.pca<-test.pca[-length(test.pca)]
+train.pca$classe<-classe
+```
+
+### Create a cross-validation set and fit the random forest model
+
+
+```r
+set.seed(2014)
+trainIndex <- createDataPartition(y = train.pca$classe, p=0.75,list=FALSE) 
+trainReduced <- train.pca[trainIndex,]
+crossValidation<-train.pca[-trainIndex,]
+modelFit <- train(classe ~ ., data=trainReduced, method='rf')
+```
+
+Finally, I can check the accuracy of the model, the accuracy with the crossvalidation set and I can meke the predictions for the test set
+
+
+```r
+modelFit
+crossPrediction<-predict(modelFit,crossValidation)
+confusionMatrix(crossPrediction,crossValidation$classe)
+predict(modelFit,test.pca)
+```
+The Accuracy of the model was 98.6% and the Out of Sample Error was 1.4 %
